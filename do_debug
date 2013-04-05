@@ -1,0 +1,107 @@
+#!/bin/bash
+
+#PATH=/lusr/opt/pintos/:/lusr/opt/bochs-2.2.6-pintos/bin/:/lusr/opt/qemu-1.1.1/:$PATH
+PROOT='..'
+CMD=`basename $0`
+MACROS="`readlink -f my_gdb_macros`"
+BREAKS="../pintos_breaks"
+#GDB=../../utils/pintos-gdb
+GDB=/lusr/opt/pintos//pintos-gdb
+DEBUG_WINDOW_NAME=debug
+EMPTY_FILE=`mktemp /tmp/empty_fileXXX`
+
+msg ()
+{
+    echo "do_debug: $@"
+}
+
+clean_and_exit ()
+{
+    rm $EMPTY_FILE
+    killall bochs 2>&1 >/dev/null
+    killall qemu 2>&1 >/dev/null
+    exit
+}
+
+trap clean_and_exit EXIT
+
+msg "command line = $CMD $@"
+#echo "command args = $@"
+
+# Environment checks
+which x-terminal-emulator >/dev/null
+GTERM_DEFINED=$?
+if [[ $TERM =~ .*screen.* ]] ; then
+    msg using screen
+    SCREEN_RUNNING=1
+    DEBUG_TERM="screen -t debug"
+elif [ $GTERM_DEFINED ] ; then
+    DEBUG_TERM="x-terminal-emulator --title $DEBUG_WINDOW_NAME -x"
+else
+    DEBUG_TERM="xterm -T debug -e"
+fi
+msg using $DEBUG_TERM...
+
+if [ ! "$1" ] ; then
+    msg "must provide test name"
+    clean_and_exit
+else
+    TEST_NAME=$1
+    shift
+    PROC_ARGS="$@"
+fi
+
+if [ ! -e $BREAKS ] ; then
+    BREAKS=$EMPTY_FILE
+fi
+
+if [ ! -e $MACROS ] ; then
+    MACROS=$EMPTY_FILE
+fi
+
+make
+
+if [ $? != 0 ] ; then
+    exit
+fi
+
+cd build
+
+DEBUG_FLAG=""
+case $CMD in
+    do_debug)
+        DEBUG_FLAG=--gdb
+        ;;
+    do_run)
+        make tests/userprog/$TEST_NAME.result
+        cat tests/userprog/$TEST_NAME.result
+        clean_and_exit
+        ;;
+    *)
+        msg "unknown invocation $@"
+        clean_and_exit
+        ;;
+esac
+
+# rebuild our command line
+if [ "$PROC_ARGS" ] ; then
+    cmdline="$TEST_NAME $PROC_ARGS"
+else
+    cmdline=$TEST_NAME
+fi
+
+msg "pintos -k -T 60 $DEBUG_FLAG --qemu  --filesys-size=2 \
+    -p tests/userprog/$TEST_NAME -a $TEST_NAME \
+    -- -q  -f run $cmdline < /dev/null &"
+pintos -k -T 60 $DEBUG_FLAG --qemu  --filesys-size=2 \
+    -p tests/userprog/$TEST_NAME -a $TEST_NAME \
+    -- -q  -f run "$cmdline" < /dev/null &
+
+KILL_PID=0
+if [ $CMD = do_debug ] ; then
+    $GDB --eval-command="debugpintos" kernel.o
+    KILL_PID=$?
+fi
+wait
+msg exiting
+kill $KILL_PID

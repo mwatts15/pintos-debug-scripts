@@ -1,0 +1,48 @@
+#!/usr/bin/perl -W
+use strict;
+use Env;
+use IO::Handle;
+
+my @hosts=qw/envy wand-of-wishing wrath sloth smarmy-pirate skeletal-sommelier/;
+my $test_script =<<'END';
+echo It $HOSTNAME
+END
+my $script =<<'END';
+uptime
+
+cd
+
+if [ ! -d pintoses ] ; then
+    mkdir pintoses
+fi
+
+cd pintoses
+
+MY_PINTOS=pintos-$HOSTNAME
+RESULTS=${HOSTNAME}-results
+PINTOS=$HOME/cs439/pintos
+PROJECT=vm
+
+cp -R $PINTOS_DIR $MY_PINTOS
+Cd $my_pintos/src
+make clean
+cd $PROJECT/
+make check
+cp build/results ~/cs439/pintos/src/$PROJECT/$RESULTS
+cd
+rm -r $my_pintos
+END
+
+for my $h (@hosts)
+{
+    my $pid = fork();
+    if (! $pid)
+    {
+        print "running on $h...\n";
+        open my $child_in => "|ssh -o \"BatchMode yes\" $h.cs.utexas.edu 'bash -s'";
+        print $child_in $script;
+        exit;
+        # Not reached
+        #exec ""
+    }
+}
